@@ -72,7 +72,7 @@ class ResidenceController {
     }
   }
 
-  // Créer une résidence avec système d'approbation
+  // Créer une résidence avec système d'approbation - CORRIGÉ
   static async create(req, res) {
     const client = await pool.connect();
     try {
@@ -187,6 +187,15 @@ class ResidenceController {
     } catch (error) {
       await client.query('ROLLBACK');
       console.error('Erreur création résidence:', error);
+      
+      // Gestion spécifique de l'erreur de clé dupliquée
+      if (error.code === '23505') {
+        return res.status(500).json({ 
+          error: 'Erreur de base de données. Veuillez réessayer.',
+          details: 'Problème de séquence de clé primaire'
+        });
+      }
+      
       res.status(500).json({ error: 'Erreur serveur' });
     } finally {
       client.release();
