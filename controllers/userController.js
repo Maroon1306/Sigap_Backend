@@ -3,7 +3,7 @@ const User = require('../models/User');
 class UserController {
   static async createUser(req, res) {
     try {
-      const { immatricule, nom_complet, role } = req.body;
+      const { immatricule, nom_complet, role, fokontany_code } = req.body;
 
       if (!immatricule || !nom_complet || !role) {
         return res.status(400).json({ message: 'Tous les champs sont requis' });
@@ -12,13 +12,14 @@ class UserController {
       const username = immatricule.toLowerCase();
       const password = Math.random().toString(36).slice(-8);
 
-      const userData = {
-        immatricule,
-        nom_complet,
-        username,
-        password,
-        role
-      };
+      // if you want to resolve fokontany_code to an id, implement here (requires a fokontany model or pool)
+      let userData = { immatricule, nom_complet, username, password, role };
+
+      // optional: handle fokontany_code -> fokontany_id resolution if provided
+      if (fokontany_code) {
+        // you can add lookup here using pool query to fokontany table
+        userData.fokontany_id = null; // placeholder
+      }
 
       await User.create(userData);
 
@@ -28,12 +29,14 @@ class UserController {
           username,
           password,
           nom_complet,
-          role
+          role,
+          fokontany_code: fokontany_code || null
         }
       });
     } catch (error) {
       console.error('Erreur création utilisateur:', error);
-      if (error.code === 'ER_DUP_ENTRY') {
+      // Postgres unique violation code is '23505'
+      if (error.code === '23505') {
         return res.status(400).json({ message: 'Immatricule ou username déjà utilisé' });
       }
       res.status(500).json({ message: 'Erreur serveur' });
