@@ -81,7 +81,7 @@ class User {
 
     const query = `
       UPDATE users
-      SET nom_complet = $1, username = $2, role = $3, is_active = $4, fokontany_id = $5
+      SET nom_complet = $1, username = $2, role = $3, is_active = $4, fokontany_id = $5, updated_at = NOW()
       WHERE id = $6
       RETURNING *
     `;
@@ -93,7 +93,7 @@ class User {
   static async updatePassword(id, newPassword) {
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    const query = 'UPDATE users SET password = $1 WHERE id = $2 RETURNING *';
+    const query = 'UPDATE users SET password = $1, updated_at = NOW() WHERE id = $2 RETURNING *';
     const { rows } = await pool.query(query, [hashedPassword, id]);
     return rows[0];
   }
