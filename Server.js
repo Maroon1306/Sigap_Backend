@@ -238,6 +238,18 @@ const startServer = () => {
     }
   });
 
+  // NOUVELLE ROUTE : Marquer les notifications d'une résidence comme lues
+  app.patch('/api/notifications/mark-by-residence/:residenceId', auth, async (req, res) => {
+    try {
+      const { residenceId } = req.params;
+      await NotificationController.markResidenceNotificationsAsRead(residenceId);
+      res.json({ message: 'Notifications marquées comme lues' });
+    } catch (error) {
+      console.error('Erreur mark-by-residence:', error);
+      res.status(500).json({ message: 'Erreur serveur' });
+    }
+  });
+
   // Routes pour l'approbation des résidences
   app.get('/api/residences/pending', auth, async (req, res) => {
     try {
@@ -259,6 +271,88 @@ const startServer = () => {
     try {
       await ResidenceController.rejectResidence(req, res);
     } catch (error) {
+      res.status(500).json({ message: 'Erreur serveur' });
+    }
+  });
+
+  // ROUTE DE RECHERCHE
+  app.get('/api/search', auth, async (req, res) => {
+    try {
+      const { q } = req.query;
+      if (!q || q.trim() === '') {
+        return res.json([]);
+      }
+
+      const searchTerm = `%${q}%`;
+      const userId = req.user.id;
+
+      // Recherche dans les résidences
+      const residencesQuery = `
+        SELECT r.*, 
+               u.nom_complet as created_by_name,
+               'residence' as type
+        FROM residences r
+        LEFT JOIN users u ON r.created_by = u.id
+        WHERE (
+          r.lot ILIKE $1 OR
+          r.quartier ILIKE $1 OR
+          r.ville ILIKE $1 OR
+          r.fokontany ILIKE $1
+        ) AND r.is_active = true
+        LIMIT 10
+      `;
+
+      // Recherche dans les personnes
+      const personsQuery = `
+        SELECT p.*, 
+               r.lot as residence_lot,
+               r.quartier as residence_quartier,
+               'person' as type
+        FROM persons p
+        JOIN residences r ON p.residence_id = r.id
+        WHERE (
+          p.nom_complet ILIKE $1 OR
+          p.cin ILIKE $1 OR
+          p.telephone ILIKE $1
+        )
+        LIMIT 10
+      `;
+
+      const [residencesResult, personsResult] = await Promise.all([
+        pool.query(residencesQuery, [searchTerm]),
+        pool.query(personsQuery, [searchTerm])
+      ]);
+
+      // Formater les résultats
+      const residences = residencesResult.rows.map(r => ({
+        id: r.id,
+        type: 'residence',
+        lot: r.lot,
+        quartier: r.quartier,
+        ville: r.ville,
+        lat: r.lat,
+        lng: r.lng,
+        created_by: r.created_by_name
+      }));
+
+      const persons = personsResult.rows.map(p => ({
+        id: p.id,
+        type: 'person',
+        nom: p.nom_complet,
+        cin: p.cin,
+        telephone: p.telephone,
+        residence: {
+          lot: p.residence_lot,
+          quartier: p.residence_quartier
+        }
+      }));
+
+      // Combiner les résultats
+      const results = [...residences, ...persons];
+      res.json(results);
+
+    } catch (error) {
+      console.error('Erreur recherche:', error);
       res.status(500).json({ message: 'Erreur serveur' });
     }
   });

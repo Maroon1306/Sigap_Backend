@@ -1,3 +1,4 @@
+
 const { pool } = require('../config/database');
 
 class NotificationController {
@@ -38,14 +39,23 @@ class NotificationController {
       const userId = req.user.id;
       const { notificationId } = req.params;
 
-      const query =
-        `UPDATE notifications
-         SET is_read = TRUE, updated_at = NOW()
-         WHERE id = $1 AND recipient_id = $2`;
+      const query = `
+        UPDATE notifications
+        SET is_read = TRUE, updated_at = NOW()
+        WHERE id = $1 AND recipient_id = $2
+        RETURNING *
+      `;
 
-      await pool.query(query, [notificationId, userId]);
+      const result = await pool.query(query, [notificationId, userId]);
 
-      res.json({ message: "Notification marquée comme lue" });
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Notification non trouvée" });
+      }
+
+      res.json({ 
+        message: "Notification marquée comme lue",
+        notification: result.rows[0]
+      });
     } catch (error) {
       console.error("Erreur markAsRead:", error);
       res.status(500).json({ message: "Erreur serveur" });
@@ -60,9 +70,10 @@ class NotificationController {
     try {
       const userId = req.user.id;
 
-      const query =
-        `SELECT COUNT(*) FROM notifications
-         WHERE recipient_id = $1 AND is_read = FALSE`;
+      const query = `
+        SELECT COUNT(*) FROM notifications
+        WHERE recipient_id = $1 AND is_read = FALSE
+      `;
 
       const result = await pool.query(query, [userId]);
 
@@ -104,6 +115,43 @@ class NotificationController {
 
     } catch (error) {
       console.error("Erreur createNotification:", error);
+      throw error;
+    }
+  }
+
+  // ============================
+  // 5. Supprimer les notifications d'une résidence approuvée
+  // ============================
+  static async deleteResidenceNotifications(residenceId) {
+    try {
+      const query = `
+        DELETE FROM notifications 
+        WHERE related_entity_id = $1 AND type = 'pending_residence'
+      `;
+
+      await pool.query(query, [residenceId]);
+      console.log(`Notifications supprimées pour résidence ID: ${residenceId}`);
+    } catch (error) {
+      console.error("Erreur deleteResidenceNotifications:", error);
+      throw error;
+    }
+  }
+
+  // ============================
+  // 6. Marquer les notifications d'une résidence comme lues
+  // ============================
+  static async markResidenceNotificationsAsRead(residenceId) {
+    try {
+      const query = `
+        UPDATE notifications
+        SET is_read = TRUE, updated_at = NOW()
+        WHERE related_entity_id = $1 AND type = 'pending_residence'
+      `;
+
+      await pool.query(query, [residenceId]);
+      console.log(`Notifications marquées comme lues pour résidence ID: ${residenceId}`);
+    } catch (error) {
+      console.error("Erreur markResidenceNotificationsAsRead:", error);
       throw error;
     }
   }
