@@ -23,6 +23,9 @@ app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 
+// ++++ AJOUTEZ CETTE LIGNE POUR SERVIR LES FICHIERS STATIQUES ++++
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // Créer les dossiers d'upload
 const uploadsDir = path.join(__dirname, 'uploads');
 const residencesUploadDir = path.join(uploadsDir, 'residences');

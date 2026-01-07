@@ -32,10 +32,11 @@ const storagePending = multer.diskStorage({
 const uploadPending = multer({ storage: storagePending });
 
 class ResidenceController {
-  // Lister les résidences
+  // Lister les résidences - CORRIGÉ pour retourner URLs complètes
   static async list(req, res) {
     try {
       const fok = req.query.fokontany;
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
       
       const sql = fok
         ? `
@@ -60,10 +61,20 @@ class ResidenceController {
       
       const result = await pool.query(sql, fok ? [fok] : []);
       
-      const residences = result.rows.map(residence => ({
-        ...residence,
-        photos: residence.photos || []
-      }));
+      const residences = result.rows.map(residence => {
+        // Transformer les chemins relatifs en URLs complètes
+        const photos = (residence.photos || []).map(photo => {
+          if (photo && photo.startsWith('/uploads/residences/')) {
+            return `${baseUrl}${photo}`;
+          }
+          return photo;
+        });
+        
+        return {
+          ...residence,
+          photos: photos
+        };
+      });
 
       res.json(residences);
     } catch (error) {
@@ -247,7 +258,7 @@ class ResidenceController {
     }
   }
 
-  // Upload de photos
+  // Upload de photos - CORRIGÉ pour retourner URLs complètes
   static async uploadPhotos(req, res) {
     const client = await pool.connect();
     try {
@@ -273,10 +284,13 @@ class ResidenceController {
 
       await client.query('COMMIT');
 
-      // Retourner les URLs des photos
+      // Retourner les URLs complètes des photos
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
       const photoUrls = photos.map(photo => ({
-        url: `/uploads/residences/${photo.filename}`,
-        filename: photo.filename
+        id: Date.now(), // ID temporaire
+        filename: photo.filename,
+        url: `${baseUrl}/uploads/residences/${photo.filename}`,
+        created_at: new Date().toISOString()
       }));
 
       res.status(201).json({
@@ -298,7 +312,7 @@ class ResidenceController {
     }
   }
 
-  // Récupérer les photos d'une résidence
+  // Récupérer les photos d'une résidence - CORRIGÉ pour retourner URLs complètes
   static async getPhotos(req, res) {
     try {
       const residenceId = req.params.id;
@@ -312,9 +326,13 @@ class ResidenceController {
       
       const result = await pool.query(query, [residenceId]);
       
+      // Construire les URLs complètes
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
       const photos = result.rows.map(photo => ({
-        ...photo,
-        url: `/uploads/residences/${photo.filename}`
+        id: photo.id,
+        filename: photo.filename,
+        url: `${baseUrl}/uploads/residences/${photo.filename}`,
+        created_at: photo.created_at
       }));
 
       res.json(photos);
@@ -399,11 +417,26 @@ class ResidenceController {
 
       const result = await pool.query(query, params);
 
-      // Parser les données JSON
-      const pendingResidences = result.rows.map(row => ({
-        ...row,
-        residence_data: typeof row.residence_data === 'string' ? JSON.parse(row.residence_data) : row.residence_data
-      }));
+      // Parser les données JSON et construire les URLs complètes
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const pendingResidences = result.rows.map(row => {
+        const residenceData = typeof row.residence_data === 'string' ? JSON.parse(row.residence_data) : row.residence_data;
+        
+        // Corriger les URLs des photos dans les données en attente
+        if (Array.isArray(residenceData.photos)) {
+          residenceData.photos = residenceData.photos.map(photo => {
+            if (photo && photo.startsWith('pending_residences/')) {
+              return `${baseUrl}/uploads/${photo}`;
+            }
+            return photo;
+          });
+        }
+        
+        return {
+          ...row,
+          residence_data: residenceData
+        };
+      });
 
       res.json(pendingResidences);
     } catch (error) {
