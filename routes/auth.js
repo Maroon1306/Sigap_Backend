@@ -14,5 +14,7 @@ router.get('/password-change-requests', auth, authorize('admin'), AuthController
 router.post('/approve-reset', auth, authorize('admin'), AuthController.approvePasswordReset);
 router.post('/approve-password-change', auth, authorize('admin'), AuthController.approvePasswordChange);
 router.post('/invalidate-password', auth, authorize('admin'), AuthController.invalidatePassword);
+router.post('/reject-reset', auth, authorize('admin'), AuthController.rejectPasswordReset);
+router.post('/reject-password-change', auth, authorize('admin'), AuthController.rejectPasswordChange);
 
 module.exports = router;

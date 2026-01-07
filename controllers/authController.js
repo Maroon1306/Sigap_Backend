@@ -362,6 +362,82 @@ class AuthController {
     }
   }
 
+  // Rejeter une demande de réinitialisation
+  static async rejectPasswordReset(req, res) {
+    try {
+      const { requestId } = req.body;
+      console.log('Reject reset request ID:', requestId);
+
+      if (!requestId) {
+        return res.status(400).json({ message: 'ID de demande requis' });
+      }
+
+      // Vérifier si la demande existe
+      const checkQuery = 'SELECT * FROM password_reset_requests WHERE id = $1 AND status = $2';
+      const checkResult = await pool.query(checkQuery, [requestId, 'pending']);
+
+      if (checkResult.rows.length === 0) {
+        return res.status(404).json({
+          message: 'Demande non trouvée ou déjà traitée'
+        });
+      }
+
+      // Marquer comme rejetée
+      const updateQuery = 'UPDATE password_reset_requests SET status = $1 WHERE id = $2';
+      await pool.query(updateQuery, ['rejected', requestId]);
+
+      res.json({
+        success: true,
+        message: 'Demande de réinitialisation rejetée avec succès'
+      });
+    } catch (error) {
+      console.error('Erreur rejet reset:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Erreur serveur',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+
+  // Rejeter une demande de changement de mot de passe
+  static async rejectPasswordChange(req, res) {
+    try {
+      const { requestId } = req.body;
+      console.log('Reject password change request ID:', requestId);
+
+      if (!requestId) {
+        return res.status(400).json({ message: 'ID de demande requis' });
+      }
+
+      // Vérifier si la demande existe
+      const checkQuery = 'SELECT * FROM password_change_requests WHERE id = $1 AND status = $2';
+      const checkResult = await pool.query(checkQuery, [requestId, 'pending']);
+
+      if (checkResult.rows.length === 0) {
+        return res.status(404).json({
+          message: 'Demande non trouvée ou déjà traitée'
+        });
+      }
+
+      // Marquer comme rejetée
+      const updateQuery = 'UPDATE password_change_requests SET status = $1 WHERE id = $2';
+      await pool.query(updateQuery, ['rejected', requestId]);
+
+      res.json({
+        success: true,
+        message: 'Demande de changement de mot de passe rejetée avec succès'
+      });
+    } catch (error) {
+      console.error('Erreur rejet changement:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Erreur serveur',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+
   // Invalider (forcer) le mot de passe d'un utilisateur (admin action)
   static async invalidatePassword(req, res) {
     try {
