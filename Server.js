@@ -40,7 +40,7 @@ let isDBConnected = false;
 const initializeServer = async () => {
   console.log('🔄 Initialisation de la connexion PostgreSQL...');
   isDBConnected = await testConnection();
-  
+
   if (isDBConnected) {
     startServer();
   } else {
@@ -53,8 +53,8 @@ const startServer = () => {
   // Routes principales avec gestion d'erreurs
   app.use('/api/auth', (req, res, next) => {
     if (!isDBConnected) {
-      return res.status(503).json({ 
-        message: 'Service temporairement indisponible. Base de données en cours de connexion...' 
+      return res.status(503).json({
+        message: 'Service temporairement indisponible. Base de données en cours de connexion...'
       });
     }
     next();
@@ -62,8 +62,8 @@ const startServer = () => {
 
   app.use('/api/users', (req, res, next) => {
     if (!isDBConnected) {
-      return res.status(503).json({ 
-        message: 'Service temporairement indisponible. Base de données en cours de connexion...' 
+      return res.status(503).json({
+        message: 'Service temporairement indisponible. Base de données en cours de connexion...'
       });
     }
     next();
@@ -71,8 +71,8 @@ const startServer = () => {
 
   app.use('/api/residences', (req, res, next) => {
     if (!isDBConnected) {
-      return res.status(503).json({ 
-        message: 'Service temporairement indisponible. Base de données en cours de connexion...' 
+      return res.status(503).json({
+        message: 'Service temporairement indisponible. Base de données en cours de connexion...'
       });
     }
     next();
@@ -80,8 +80,8 @@ const startServer = () => {
 
   app.use('/api/fokontany', (req, res, next) => {
     if (!isDBConnected) {
-      return res.status(503).json({ 
-        message: 'Service temporairement indisponible. Base de données en cours de connexion...' 
+      return res.status(503).json({
+        message: 'Service temporairement indisponible. Base de données en cours de connexion...'
       });
     }
     next();
@@ -89,8 +89,8 @@ const startServer = () => {
 
   app.use('/api/persons', (req, res, next) => {
     if (!isDBConnected) {
-      return res.status(503).json({ 
-        message: 'Service temporairement indisponible. Base de données en cours de connexion...' 
+      return res.status(503).json({
+        message: 'Service temporairement indisponible. Base de données en cours de connexion...'
       });
     }
     next();
@@ -100,7 +100,7 @@ const startServer = () => {
   app.get('/api/test', async (req, res) => {
     try {
       const result = await pool.query('SELECT NOW() as server_time, version() as pg_version');
-      res.json({ 
+      res.json({
         message: '✅ API SIGAP PostgreSQL fonctionnelle',
         database: {
           time: result.rows[0].server_time,
@@ -114,8 +114,8 @@ const startServer = () => {
 
   // Health check simplifié
   app.get('/api/health', (req, res) => {
-    res.json({ 
-      status: 'OK', 
+    res.json({
+      status: 'OK',
       database: isDBConnected ? 'CONNECTED' : 'DISCONNECTED',
       timestamp: new Date().toISOString()
     });
@@ -128,25 +128,25 @@ const startServer = () => {
       await client.query('BEGIN');
 
       console.log('🔧 Réparation des séquences PostgreSQL...');
-      
+
       const tables = [
-        'users', 'fokontany', 'residences', 'persons', 
-        'photos', 'person_relations', 'notifications', 
-        'pending_residences', 'password_reset_requests', 
+        'users', 'fokontany', 'residences', 'persons',
+        'photos', 'person_relations', 'notifications',
+        'pending_residences', 'password_reset_requests',
         'password_change_requests'
       ];
 
       let results = [];
-      
+
       for (const table of tables) {
         const sequenceName = `${table}_id_seq`;
-        
+
         // Vérifier si la table existe
         const tableExists = await client.query(
           "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = $1)",
           [table]
         );
-        
+
         if (!tableExists.rows[0].exists) {
           results.push({
             table,
@@ -156,13 +156,13 @@ const startServer = () => {
           });
           continue;
         }
-        
+
         // Vérifier si la séquence existe
         const sequenceExists = await client.query(
           "SELECT EXISTS (SELECT FROM information_schema.sequences WHERE sequence_name = $1)",
           [sequenceName]
         );
-        
+
         if (!sequenceExists.rows[0].exists) {
           results.push({
             table,
@@ -172,12 +172,12 @@ const startServer = () => {
           });
           continue;
         }
-        
+
         // Réinitialiser la séquence
         const fixQuery = `
           SELECT setval('${sequenceName}', COALESCE((SELECT MAX(id) FROM ${table}), 1), true) as new_value
         `;
-        
+
         try {
           const result = await client.query(fixQuery);
           results.push({
@@ -198,18 +198,18 @@ const startServer = () => {
       }
 
       await client.query('COMMIT');
-      
+
       res.json({
         message: 'Séquences réinitialisées avec succès',
         results
       });
-      
+
     } catch (error) {
       await client.query('ROLLBACK');
       console.error('Erreur réinitialisation séquences:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Erreur lors de la réinitialisation des séquences',
-        details: error.message 
+        details: error.message
       });
     } finally {
       client.release();
@@ -242,6 +242,7 @@ const startServer = () => {
   });
 
   // NOUVELLE ROUTE : Marquer les notifications d'une résidence comme lues
+  // ... après cette ligne :
   app.patch('/api/notifications/mark-by-residence/:residenceId', auth, async (req, res) => {
     try {
       const { residenceId } = req.params;
@@ -252,6 +253,42 @@ const startServer = () => {
       res.status(500).json({ message: 'Erreur serveur' });
     }
   });
+
+  // ============================================
+  // AJOUTER CES NOUVELLES ROUTES POUR PHOTOS PENDING
+  // ============================================
+
+  // Upload de fichiers pour pending residences
+  app.post('/api/residences/pending/:pendingId/photos', auth, ResidenceController.uploadPending.array('photos', 10), async (req, res) => {
+    try {
+      await ResidenceController.uploadPendingPhotos(req, res);
+    } catch (error) {
+      console.error('Erreur upload photos pending:', error);
+      res.status(500).json({ message: 'Erreur serveur lors de l\'upload des photos' });
+    }
+  });
+
+  // Upload base64 pour pending residences
+  app.post('/api/residences/pending/:pendingId/photos-base64', auth, async (req, res) => {
+    try {
+      await ResidenceController.uploadPendingPhotosBase64(req, res);
+    } catch (error) {
+      console.error('Erreur upload base64 photos pending:', error);
+      res.status(500).json({ message: 'Erreur serveur lors de l\'upload des photos base64' });
+    }
+  });
+
+  // Récupérer les photos d'une pending residence
+  app.get('/api/residences/pending/:pendingId/photos', auth, async (req, res) => {
+    try {
+      await ResidenceController.getPendingPhotos(req, res);
+    } catch (error) {
+      console.error('Erreur récupération photos pending:', error);
+      res.status(500).json({ message: 'Erreur serveur lors de la récupération des photos' });
+    }
+  });
+
+
 
   // Routes pour l'approbation des résidences
   app.get('/api/residences/pending', auth, async (req, res) => {
@@ -363,8 +400,8 @@ const startServer = () => {
   // Initialisation de la base de données avec gestion d'erreurs améliorée
   app.get('/api/init-db', async (req, res) => {
     if (!isDBConnected) {
-      return res.status(503).json({ 
-        message: 'Base de données non connectée. Veuillez réessayer.' 
+      return res.status(503).json({
+        message: 'Base de données non connectée. Veuillez réessayer.'
       });
     }
 
@@ -520,7 +557,7 @@ const startServer = () => {
       const sequences = [
         'users_id_seq', 'fokontany_id_seq', 'residences_id_seq', 'persons_id_seq',
         'photos_id_seq', 'person_relations_id_seq', 'notifications_id_seq',
-        'pending_residences_id_seq', 'password_reset_requests_id_seq', 
+        'pending_residences_id_seq', 'password_reset_requests_id_seq',
         'password_change_requests_id_seq'
       ];
 
@@ -536,7 +573,7 @@ const startServer = () => {
       // Créer l'admin par défaut
       const bcrypt = require('bcryptjs');
       const defaultPassword = bcrypt.hashSync('admin1234', 10);
-      
+
       await client.query(
         `INSERT INTO users (immatricule, nom_complet, username, password, role) 
          VALUES ($1, $2, $3, $4, $5)
@@ -546,7 +583,7 @@ const startServer = () => {
 
       await client.query('COMMIT');
 
-      res.json({ 
+      res.json({
         message: 'Base de données PostgreSQL initialisée avec succès',
         admin: {
           username: 'admin',
@@ -572,16 +609,16 @@ const startServer = () => {
   // Gestion des erreurs globales
   app.use((err, req, res, next) => {
     console.error('Erreur serveur:', err);
-    
+
     if (err.message && err.message.includes('Connection terminated')) {
       isDBConnected = false;
       setTimeout(initializeServer, 5000);
-      return res.status(503).json({ 
-        message: 'Connexion base de données perdue. Reconnexion en cours...' 
+      return res.status(503).json({
+        message: 'Connexion base de données perdue. Reconnexion en cours...'
       });
     }
-    
-    res.status(500).json({ 
+
+    res.status(500).json({
       message: 'Erreur interne du serveur',
       error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
     });

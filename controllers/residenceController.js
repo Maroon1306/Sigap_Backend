@@ -387,6 +387,234 @@ class ResidenceController {
     }
   }
 
+  // ============================================
+  // NOUVELLES MÉTHODES POUR PHOTOS PENDING
+  // ============================================
+
+  // Upload de photos pour pending residences (fichiers)
+  static async uploadPendingPhotos(req, res) {
+    const client = await pool.connect();
+    try {
+      const pendingId = req.params.pendingId;
+      
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: 'Aucun fichier uploadé' });
+      }
+
+      await client.query('BEGIN');
+
+      // Récupérer les données existantes du pending
+      const pendingResult = await client.query(
+        'SELECT * FROM pending_residences WHERE id = $1 FOR UPDATE',
+        [pendingId]
+      );
+      
+      if (pendingResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Résidence en attente non trouvée' });
+      }
+
+      const pending = pendingResult.rows[0];
+      let residenceData = typeof pending.residence_data === 'string' 
+        ? JSON.parse(pending.residence_data) 
+        : pending.residence_data;
+
+      // Construire les URLs des nouvelles photos
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const newPhotos = [];
+      
+      for (const file of req.files) {
+        const photoUrl = `${baseUrl}/uploads/pending_residences/${file.filename}`;
+        newPhotos.push(photoUrl);
+      }
+
+      // Ajouter les nouvelles photos aux données existantes
+      if (!residenceData.photos) {
+        residenceData.photos = [];
+      }
+      
+      residenceData.photos = [...residenceData.photos, ...newPhotos];
+
+      // Mettre à jour les données dans pending_residences
+      await client.query(
+        'UPDATE pending_residences SET residence_data = $1, updated_at = NOW() WHERE id = $2',
+        [JSON.stringify(residenceData), pendingId]
+      );
+
+      await client.query('COMMIT');
+
+      // Retourner les informations des photos uploadées
+      const responsePhotos = req.files.map((file, index) => ({
+        id: Date.now() + index,
+        filename: file.filename,
+        url: `${baseUrl}/uploads/pending_residences/${file.filename}`,
+        created_at: new Date().toISOString()
+      }));
+
+      res.status(201).json({
+        message: 'Photos uploadées avec succès pour la résidence en attente',
+        photos: responsePhotos
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Erreur upload photos pending:', error);
+      
+      // Supprimer les fichiers uploadés en cas d'erreur
+      if (req.files) {
+        req.files.forEach(file => {
+          try { fs.unlinkSync(file.path); } catch (e) {}
+        });
+      }
+      
+      res.status(500).json({ error: 'Erreur enregistrement photos' });
+    } finally {
+      client.release();
+    }
+  }
+
+  // Upload de photos base64 pour pending residences
+  static async uploadPendingPhotosBase64(req, res) {
+    const client = await pool.connect();
+    try {
+      const pendingId = req.params.pendingId;
+      const { photos: photosBase64 } = req.body;
+      
+      if (!photosBase64 || !Array.isArray(photosBase64) || photosBase64.length === 0) {
+        return res.status(400).json({ error: 'Aucune photo base64 fournie' });
+      }
+
+      await client.query('BEGIN');
+
+      // Récupérer les données existantes du pending
+      const pendingResult = await client.query(
+        'SELECT * FROM pending_residences WHERE id = $1 FOR UPDATE',
+        [pendingId]
+      );
+      
+      if (pendingResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Résidence en attente non trouvée' });
+      }
+
+      const pending = pendingResult.rows[0];
+      let residenceData = typeof pending.residence_data === 'string' 
+        ? JSON.parse(pending.residence_data) 
+        : pending.residence_data;
+
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const newPhotos = [];
+
+      // Sauvegarder chaque base64 en fichier
+      for (let i = 0; i < photosBase64.length; i++) {
+        const base64Data = photosBase64[i];
+        
+        if (!base64Data || typeof base64Data !== 'string') {
+          continue;
+        }
+
+        let imageBuffer;
+        let extension = 'jpg';
+        
+        if (base64Data.startsWith('data:image/')) {
+          const matches = base64Data.match(/^data:image\/([A-Za-z-+/]+);base64,(.+)$/);
+          if (!matches || matches.length !== 3) {
+            continue;
+          }
+
+          extension = matches[1] === 'jpeg' ? 'jpg' : matches[1];
+          imageBuffer = Buffer.from(matches[2], 'base64');
+        } else {
+          try {
+            imageBuffer = Buffer.from(base64Data, 'base64');
+          } catch (e) {
+            console.warn('Base64 invalide:', e);
+            continue;
+          }
+        }
+
+        const filename = `pending-${pendingId}-${Date.now()}-${i}.${extension}`;
+        const filePath = path.join(pendingDir, filename);
+        
+        try {
+          fs.writeFileSync(filePath, imageBuffer);
+          const photoUrl = `${baseUrl}/uploads/pending_residences/${filename}`;
+          newPhotos.push(photoUrl);
+        } catch (writeErr) {
+          console.error('Erreur écriture fichier:', writeErr);
+        }
+      }
+
+      // Ajouter les nouvelles photos aux données existantes
+      if (!residenceData.photos) {
+        residenceData.photos = [];
+      }
+      
+      residenceData.photos = [...residenceData.photos, ...newPhotos];
+
+      // Mettre à jour les données dans pending_residences
+      await client.query(
+        'UPDATE pending_residences SET residence_data = $1, updated_at = NOW() WHERE id = $2',
+        [JSON.stringify(residenceData), pendingId]
+      );
+
+      await client.query('COMMIT');
+
+      // Préparer la réponse
+      const responsePhotos = newPhotos.map((url, index) => ({
+        id: Date.now() + index,
+        filename: url.split('/').pop(),
+        url: url,
+        created_at: new Date().toISOString()
+      }));
+
+      res.status(201).json({
+        message: 'Photos base64 uploadées avec succès',
+        photos: responsePhotos
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Erreur upload base64 photos pending:', error);
+      res.status(500).json({ error: 'Erreur enregistrement photos base64' });
+    } finally {
+      client.release();
+    }
+  }
+
+  // Récupérer les photos d'une pending residence
+  static async getPendingPhotos(req, res) {
+    try {
+      const pendingId = req.params.pendingId;
+      
+      const pendingResult = await pool.query(
+        'SELECT residence_data FROM pending_residences WHERE id = $1',
+        [pendingId]
+      );
+      
+      if (pendingResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Résidence en attente non trouvée' });
+      }
+
+      const pending = pendingResult.rows[0];
+      const residenceData = typeof pending.residence_data === 'string' 
+        ? JSON.parse(pending.residence_data) 
+        : pending.residence_data;
+
+      const photos = Array.isArray(residenceData.photos) ? residenceData.photos : [];
+      
+      const formattedPhotos = photos.map((url, index) => ({
+        id: index + 1,
+        url: url,
+        filename: url.split('/').pop(),
+        created_at: new Date().toISOString()
+      }));
+
+      res.json(formattedPhotos);
+    } catch (error) {
+      console.error('Erreur récupération photos pending:', error);
+      res.status(500).json({ error: 'Erreur récupération photos' });
+    }
+  }
+
   // Récupérer les résidences en attente d'approbation
   static async getPendingResidences(req, res) {
     try {
@@ -417,12 +645,10 @@ class ResidenceController {
 
       const result = await pool.query(query, params);
 
-      // Parser les données JSON et construire les URLs complètes
       const baseUrl = `${req.protocol}://${req.get('host')}`;
       const pendingResidences = result.rows.map(row => {
         const residenceData = typeof row.residence_data === 'string' ? JSON.parse(row.residence_data) : row.residence_data;
         
-        // Corriger les URLs des photos dans les données en attente
         if (Array.isArray(residenceData.photos)) {
           residenceData.photos = residenceData.photos.map(photo => {
             if (photo && photo.startsWith('pending_residences/')) {
@@ -445,7 +671,7 @@ class ResidenceController {
     }
   }
 
-  // Approuver une résidence en attente
+  // Approuver une résidence en attente - AMÉLIORÉ avec logs
   static async approveResidence(req, res) {
     const client = await pool.connect();
     try {
@@ -528,15 +754,19 @@ class ResidenceController {
         }
       }
 
-      // Gérer les photos
+      // Gérer les photos avec logs améliorés
       const pendingPhotos = Array.isArray(residenceData.photos) ? residenceData.photos : [];
       const movedFilenames = [];
+      
+      console.log(`🔄 Migration de ${pendingPhotos.length} photos pour pending ${pendingId}`);
       
       for (const photo of pendingPhotos) {
         const filename = (typeof photo === 'string') ? photo.split('/').pop() : null;
         if (!filename) continue;
 
         const pendingPath = path.join(pendingDir, filename);
+        console.log(`📁 Vérification fichier: ${pendingPath} (existe: ${fs.existsSync(pendingPath)})`);
+        
         if (fs.existsSync(pendingPath)) {
           const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
           const destFilename = `residence-${uniqueSuffix}${path.extname(filename)}`;
@@ -545,15 +775,19 @@ class ResidenceController {
           try {
             fs.renameSync(pendingPath, destPath);
             movedFilenames.push(destFilename);
+            console.log(`✅ Photo migrée: ${filename} → ${destFilename}`);
           } catch (renameErr) {
             try {
               fs.copyFileSync(pendingPath, destPath);
               fs.unlinkSync(pendingPath);
               movedFilenames.push(destFilename);
+              console.log(`✅ Photo copiée: ${filename} → ${destFilename}`);
             } catch (copyErr) {
-              console.error('Erreur déplacement fichier:', copyErr);
+              console.error('❌ Erreur déplacement fichier:', copyErr);
             }
           }
+        } else {
+          console.warn(`⚠️ Fichier non trouvé: ${pendingPath}`);
         }
       }
 
@@ -639,6 +873,8 @@ class ResidenceController {
         const residenceData = typeof pending.residence_data === 'string' ? JSON.parse(pending.residence_data) : pending.residence_data;
         const pendingPhotos = Array.isArray(residenceData.photos) ? residenceData.photos : [];
         
+        console.log(`🗑️  Suppression de ${pendingPhotos.length} photos pour pending rejeté ${pendingId}`);
+        
         for (const photo of pendingPhotos) {
           const filename = (typeof photo === 'string') ? photo.split('/').pop() : null;
           if (!filename) continue;
@@ -647,6 +883,7 @@ class ResidenceController {
           try { 
             if (fs.existsSync(filePath)) {
               fs.unlinkSync(filePath);
+              console.log(`✅ Fichier supprimé: ${filePath}`);
             }
           } catch (e) {
             console.warn('Impossible de supprimer fichier pending:', filePath, e);
