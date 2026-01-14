@@ -254,41 +254,6 @@ const startServer = () => {
     }
   });
 
-  // ============================================
-  // AJOUTER CES NOUVELLES ROUTES POUR PHOTOS PENDING
-  // ============================================
-
-  // Upload de fichiers pour pending residences
-  app.post('/api/residences/pending/:pendingId/photos', auth, ResidenceController.uploadPending.array('photos', 10), async (req, res) => {
-    try {
-      await ResidenceController.uploadPendingPhotos(req, res);
-    } catch (error) {
-      console.error('Erreur upload photos pending:', error);
-      res.status(500).json({ message: 'Erreur serveur lors de l\'upload des photos' });
-    }
-  });
-
-  // Upload base64 pour pending residences
-  app.post('/api/residences/pending/:pendingId/photos-base64', auth, async (req, res) => {
-    try {
-      await ResidenceController.uploadPendingPhotosBase64(req, res);
-    } catch (error) {
-      console.error('Erreur upload base64 photos pending:', error);
-      res.status(500).json({ message: 'Erreur serveur lors de l\'upload des photos base64' });
-    }
-  });
-
-  // Récupérer les photos d'une pending residence
-  app.get('/api/residences/pending/:pendingId/photos', auth, async (req, res) => {
-    try {
-      await ResidenceController.getPendingPhotos(req, res);
-    } catch (error) {
-      console.error('Erreur récupération photos pending:', error);
-      res.status(500).json({ message: 'Erreur serveur lors de la récupération des photos' });
-    }
-  });
-
-
 
   // Routes pour l'approbation des résidences
   app.get('/api/residences/pending', auth, async (req, res) => {
