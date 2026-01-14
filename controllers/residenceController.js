@@ -131,7 +131,7 @@ class ResidenceController {
           await NotificationController.createNotification({
             type: 'residence_approval',
             title: 'Nouvelle résidence à approuver',
-            message: `L'agent ${user.nom_complet} a ajouté une nouvelle résidence (${lot}) qui nécessite votre approbation.`,
+            message: `${lot} : ${user.nom_complet} `,
             recipient_id: secretary.id,
             sender_id: user.id,
             related_entity_id: pendingId,
